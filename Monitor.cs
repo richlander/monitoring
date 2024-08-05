@@ -7,33 +7,41 @@ public class Monitor(HttpClient client)
 {
     readonly HttpClient _client = client;
 
-    public async Task<Observation<T>> Observe<T>(Observation<T> observation) where T : INumber<T>
+    public async Task<ObservationResult<T>> Observe<T>(Observation<T> observation) where T : INumber<T>
     {
-        var nextObservationTime = observation.LastObservation + observation.Frequency;
-        var time = DateTime.UtcNow;
-
-        if (time < nextObservationTime)
-        {
-            var delayTime = nextObservationTime - time;
-            await Task.Delay(delayTime);
-        }
-
-        observation.LastObservation = DateTime.UtcNow;
         var value = await CallJsonEndPoint(observation.Endpoint);
-            
+        
         foreach (var operation in observation.Operations)
         {
             operation.Load(value);
         }
+        observation.LastObservation = DateTime.UtcNow;
 
-        return observation;
+        return observation.GetResults();
     }
 
-    public IEnumerable<Task<Observation<T>>> Observe<T>(params List<Observation<T>> observations) where T : INumber<T>
+    public IEnumerable<Task<ObservationResult<T>>> Observe<T>(params IEnumerable<Observation<T>> observations) where T : INumber<T>
     {
         foreach (var observation in observations)
         {
             yield return Observe(observation);
+        }
+    }
+
+    public IEnumerable<Task<IObservation>> QueueDelay(params IEnumerable<IObservation> observations)
+    {
+        foreach (var observation in observations)
+        {
+            var nextObservationTime = observation.LastObservation + observation.Frequency;
+            var delayTime = TimeSpan.Zero;
+            var time = DateTime.UtcNow;
+
+            if (time < nextObservationTime)
+            {
+                delayTime = nextObservationTime - time;
+            }
+
+            yield return Task.Run(() => { Task.Delay(delayTime).GetAwaiter().GetResult(); return observation; });
         }
     }
 
