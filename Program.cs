@@ -6,15 +6,16 @@ using System.Text.Json.Nodes;
 HttpClient client = new();
 Monitor monitor = new(client);
 Endpoint<double> wattsOut = new("Yeti Watts Out", "http://192.168.2.184/state", j => j.AsObject()["wattsOut"]?.GetValue<double>() ?? throw new());
-Observation<double> obsWatts = new(TimeSpan.FromSeconds(5), wattsOut, new MinOperation<double>(), new MaxOperation<double>());
+Observation<double> obsWatts = new("Watts out, short duration", TimeSpan.FromSeconds(5), wattsOut, new MinOperation<double>(), new MaxOperation<double>());
+Observation<double> obsWattsLong = new("Watts out, longer duration (rolling average)", TimeSpan.FromSeconds(60), wattsOut, new RollingAverageOperation<double>());
 Endpoint<double> ampsOut = new("Yeti Amps Out", "http://192.168.2.184/state", j => j.AsObject()["ampsOut"]?.GetValue<double>() ?? throw new());
-Observation<double> obsAmps = new(TimeSpan.FromSeconds(10), ampsOut, new MinOperation<double>(), new MaxOperation<double>());
+Observation<double> obsAmps = new("Amps out, short duration (min/max)", TimeSpan.FromSeconds(10), ampsOut, new MinOperation<double>(), new MaxOperation<double>());
 Endpoint<int> temperature = new("Yeti Temperature", "http://192.168.2.184/state", j => j.AsObject()["temperature"]?.GetValue<int>() ?? throw new());
-Observation<int> obsTemp = new(TimeSpan.FromSeconds(60), temperature, new MinOperation<int>(), new MaxOperation<int>());
+Observation<int> obsTemp = new("Temperatue, long duration", TimeSpan.FromSeconds(60), temperature, new MinOperation<int>(), new MaxOperation<int>());
 
 // Good info @ https://github.com/dotnet/runtime/pull/100316
 
-List<IObservation> observations = [obsWatts, obsAmps, obsTemp];
+List<IObservation> observations = [obsWatts, obsWattsLong, obsAmps, obsTemp];
 List<Task<IObservation>> work = [];
 work.AddRange(monitor.QueueDelay(observations));
 
@@ -40,7 +41,7 @@ while (true)
             work.AddRange(monitor.QueueDelay(observation));
         }
     }
-    catch (TaskCanceledException)
+    catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
     {
     }
 }
@@ -51,11 +52,21 @@ async Task Print<T>(Observation<T> observation) where T: INumber<T>
 
     foreach (var op in result.Operations)
     {
-        Console.WriteLine($"{observation.Endpoint.Name}; {op.Name}; {op.Value}; {observation.Frequency}; {observation.LastObservation}");
+        if (op.Changed)
+        {
+            Console.WriteLine($"{observation.Endpoint.Name}; {op.Name}; {op.Value};");
+        }
     }
 }
 
-public record Observation<T>(TimeSpan Frequency, Endpoint<T> Endpoint, params List<IOperation<T>> Operations) : IObservation where T : INumber<T>
+// void Log<T>(Observation<T> observation) where T: INumber<T>
+// {
+//     string filename = observation.Name.Replace(' ', '-');
+//     File.OpenWrite()
+// }
+
+
+public record Observation<T>(string Name, TimeSpan Frequency, Endpoint<T> Endpoint, params List<IOperation<T>> Operations) : IObservation where T : INumber<T>
 {
     public DateTime LastObservation { get; set; }
 
@@ -68,8 +79,7 @@ public record Observation<T>(TimeSpan Frequency, Endpoint<T> Endpoint, params Li
             results.Add(operation.GetResult());
         }
 
-        ObservationResult<T> result = new(Endpoint.Name, LastObservation, results);
-
+        ObservationResult<T> result = new(Name, LastObservation, results);
         return result;
     }
 }
@@ -78,7 +88,7 @@ public record Endpoint<T>(string Name, string Uri, Func<JsonNode, T?> Func) wher
 
 public record ObservationResult<T>(string Name, DateTime Time, params List<OperationResult<T>> Operations) where T : INumber<T>;
 
-public record struct OperationResult<T>(string Name, T Value) where T : INumber<T>;
+public record struct OperationResult<T>(string Name, T Value, bool Changed) where T : INumber<T>;
 
 public interface IOperation<T> where T : INumber<T>
 {
@@ -90,7 +100,7 @@ public interface IOperation<T> where T : INumber<T>
 
     bool ValueChanged { get; }
 
-    OperationResult<T> GetResult() => new(Name, Value);
+    OperationResult<T> GetResult() => new(Name, Value, ValueChanged);
 }
 
 public interface IObservation
@@ -105,7 +115,7 @@ public class MinOperation<T> : IOperation<T> where T : INumber<T>, IMinMaxValue<
     T _value = T.MaxValue;
     bool _valueChanged = false;
 
-    public string Name => "Min operation";
+    public string Name => "Min value";
 
     public T Value => _value;
 
@@ -132,7 +142,7 @@ public class MaxOperation<T> : IOperation<T> where T : INumber<T>, IMinMaxValue<
     T _value = T.MinValue;
     bool _valueChanged = false;
 
-    public string Name => "Max operation";
+    public string Name => "Max value";
 
     public T Value => _value;
 
@@ -154,28 +164,38 @@ public class MaxOperation<T> : IOperation<T> where T : INumber<T>, IMinMaxValue<
     public bool ValueChanged => _valueChanged;
 }
 
-// public class MeanOperation<T>(IOperation<T> minOperation, IOperation<T> maxOperation) : IOperation<T> where T : INumber<T>
-// {
-//     readonly IOperation<T> _minOperation = minOperation;
-//     readonly IOperation<T> _maxOperation = maxOperation;
+public class RollingAverageOperation<T> : IOperation<T> where T : INumber<T>
+{
+    T _value = T.Zero;
+    List<T> _values = [];
 
-//     public string Name => "Mean operation";
+    bool _valueChanged = false;
 
-//     public T Value => CalculateMean();
+    public string Name => "Rolling average";
 
-//     private T CalculateMean()
-//     {
-//         T min = _minOperation.Value;
-//         T max = _maxOperation.Value;
+    public T Value => _value;
 
-//         var value = (min + max) / T.CreateChecked(2);
-//         return value;
-//     }
+    public void Load(T value)
+    {
+        _values.Add(value);
 
-//     public void Load(T value)
-//     {
-//         throw new NotImplementedException();
-//     }
+        if (_values.Count > 10)
+        {
+            _values.RemoveAt(0);
+        }
 
-//     public bool ValueChanged { get; set; } = false;
-// }
+        T sum = T.Zero;
+
+        for (int i = 0; i < _values.Count; i++)
+        {
+            sum += _values[i];
+        }
+
+        T average = sum / T.CreateChecked(_values.Count);
+
+        _valueChanged = average != _value;
+        _value = average;
+    }
+
+    public bool ValueChanged => _valueChanged;
+}
