@@ -5,6 +5,17 @@ using System.Text.Json.Nodes;
 using Monitoring;
 using Monitoring.Operations;
 
+/*
+Design goals:
+
+- Be able to collect multiple values for each call to the webserver, potentially of different types
+- Multiple endpoint implementations should be possible, even though only `JsonEndpoint` is implemented.
+- Operations (like `RollingAverageOperation`) should not need to match the type of the observation
+- Operations should be very generic (hence why generic math is being used).
+- The dashboard and the observations should be tightly coupled so that dashboard -> observation interfaction is easy (a little like the "code behind" model).
+- The main program should be small, primarily setup, a while loop and visualization.
+*/
+
 HttpClient client = new();
 string yetiUrl = "http://192.168.2.184/state";
 
