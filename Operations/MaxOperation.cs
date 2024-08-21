@@ -1,30 +1,26 @@
-// using System.Numerics;
+using System.Numerics;
 
-// namespace Monitoring.Operations;
+namespace Monitoring.Operations;
 
-// public class MaxOperation<T> : IOperation<T> where T : INumber<T>, IMinMaxValue<T>
-// {
-//     T _value = T.MinValue;
-//     bool _valueChanged = false;
+public class MaxOperation<T>(string name) : IObservation<T> where T : INumber<T>, IMinMaxValue<T>
+{
+    public string Name => name;
 
-//     public string Name => "Max value";
+    public T Value { get; private set; } = T.MinValue;
 
-//     public T Value => _value;
+    object? IObservation.Value => Value;
 
-//     public void Load(T value)
-//     {
-//         if (value > _value)
-//         {
-//             _valueChanged = true;
-//             _value = value;
-//             return;
-//         }
+    public bool ValueChanged { get; private set; } = false;
 
-//         if (_valueChanged is true)
-//         {
-//             _valueChanged = false;
-//         }
-//     }
+    public DateTime Timestamp { get; private set; }
 
-//     public bool ValueChanged => _valueChanged;
-// }
+    public void Load(T value)
+    {
+        ValueChanged = value > Value;
+        if (ValueChanged)
+        {
+            Value = value;
+            Timestamp = DateTime.UtcNow;
+        }
+    }
+}

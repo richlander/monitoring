@@ -1,56 +1,60 @@
+using System.Net;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using Monitoring.Operations;
 
 namespace Monitoring;
 
-public record YetiDashboard(string Name)
+public record Dashboard(string Name, List<IEndpoint> Endpoints, JsonObservation<int> TemperatureObservation, JsonObservation<double> WattsOutObservation)
 {
-    public DateTime LastUpdated { get ; set;}
-    public int Temperature { get ; set;}
-    public double TemperatureRollingAverage { get ; set;}
-    public double WattsOut { get ; set;}
-    public double WattsOutRollingAverage { get ; set;}
+    static private int _rollingAverageCount = 10;
 
-    public void UpdateDashboard(IObservation<int> observation)
+    public int Temperature { get; private set; }
+
+    public MinOperation<int> TemperatureMinOperation { get; init; } = new("Yeti Temperature Minimum");
+
+    public MaxOperation<int> TemperatureMaxOperation { get; init; } = new("Yeti Temperature Maximum");
+
+    public MeanOperation<double> TemperatureMeanOperation { get; init; } = new("Yeti Temperature Mean");
+
+    public RollingAverageOperation<double> TemperatureRollingAverage { get; init; } = new("Yeti Temperature Rolling Average", _rollingAverageCount);
+
+    public double WattsOut { get ; private set; }
+
+    public MinOperation<double> WattsOutMinOperation { get; init; } = new("Yeti Watts Out Minimum");
+
+    public MaxOperation<double> WattsOutMaxOperation { get; init; } = new("Yeti Watts Out Maximum");
+
+    public MeanOperation<double> WattsOutMeanOperation { get; init; } = new("Yeti Watts Out Mean");
+
+    public RollingAverageOperation<double> WattsOutRollingAverage { get; init; } = new("Yeti Watts Out Rolling Average", _rollingAverageCount);
+
+    public bool ValueChanged { get; private set; }
+
+    public DateTime LastUpdated { get ; private set; }
+
+    public void Update()
     {
-        if (observation.Id == "yeti-temp")
-        {
-            Temperature = observation.Value;
-            var operation = observation.Operations?.Where(o => o.GetType() == typeof(RollingAverageOperation<double>)).FirstOrDefault();
+        // Yeti Temperature
+        ValueChanged |= Temperature == TemperatureObservation.Value;
+        Temperature = TemperatureObservation.Value;
+        TemperatureMinOperation.Load(Temperature);
+        TemperatureMaxOperation.Load(Temperature);
+        TemperatureMeanOperation.Load(TemperatureMinOperation.Value, TemperatureMaxOperation.Value);
+        TemperatureRollingAverage.Load(Temperature);
 
-            if (operation is IOperation<double> ops)
-            {
-                ops.Load(observation.Value);
-                TemperatureRollingAverage = ops.Value;
-            }
-        }
+        // Yeti Watts out
+        ValueChanged |= WattsOut == WattsOutObservation.Value;
+        WattsOut = WattsOutObservation.Value;
+        WattsOutMinOperation.Load(WattsOut);
+        WattsOutMaxOperation.Load(WattsOut);
+        WattsOutMeanOperation.Load(WattsOutMinOperation.Value, WattsOutMaxOperation.Value);
+        WattsOutRollingAverage.Load(WattsOut);
+
+        // Update timestamp
+        LastUpdated = DateTime.UtcNow;
     }
 
-    public void UpdateDashboard(IObservation<double> observation)
-    {
-    }
+    public void ResetForNextRead() => ValueChanged = false; 
 
-    public void UpdateDashboard(List<IObservation> observations, Type type)
-    {
-        if (type == typeof(int))
-        {
-            foreach (var observation in observations)
-            {
-                if (observation is IObservation<int> obs)
-                {
-                    UpdateDashboard(obs);
-                }
-            }
-        }
-        else if (type == typeof(double))
-        {
-            foreach (var observation in observations)
-            {
-                if (observation is IObservation<double> obs)
-                {
-                    UpdateDashboard(obs);
-                }
-            }
-        }
-    }
 }

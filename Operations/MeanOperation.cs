@@ -1,36 +1,32 @@
-// using System.Numerics;
+using System.Numerics;
 
-// namespace Monitoring.Operations;
+namespace Monitoring.Operations;
 
-// public class MeanOperation<T> : IVectorOperation<T> where T : INumber<T>, IMinMaxValue<T>
-// {
-//     T _value = T.MinValue;
-//     bool _valueChanged = false;
+public class MeanOperation<T>(string name) : IObservation<T> where T : INumber<T>, IMinMaxValue<T>
+{
+    public string Name { get; private set; } = name;
 
-//     public string Name => "Mean value";
+    public T Value { get; private set; } = T.MinValue;
 
-//     public T Value => _value;
+    public bool ValueChanged { get; private set; } = false;
 
-//     public void Load(params Span<T> values)
-//     {
-//         T average = values.Average();
-//         _valueChanged = average != _value;
-//         _value = average;
-//     }
+    public void Load(params Span<T> values)
+    {
+        T average = values.Average();
+        ValueChanged = Value != average;
 
-//     public void Load(params List<IOperation<T>> values)
-//     {
-//         T average = values.Average();
-//         _valueChanged = average != _value;
-//         _value = average;
-//     }
+        if (ValueChanged)
+        {
+            Value = average;
+        }
+    }
 
-//     public void Load(params List<Observation<T>> values)
-//     {
-//         T average = values.Average();
-//         _valueChanged = average != _value;
-//         _value = average;
-//     }
+    public void Load(T Value)
+    {
+        throw new NotImplementedException();
+    }
 
-//     public bool ValueChanged => _valueChanged;
-// }
+    object? IObservation.Value => throw new NotImplementedException();
+
+    public DateTime Timestamp => throw new NotImplementedException();
+}
