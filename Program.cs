@@ -12,8 +12,14 @@ Design goals:
 - Multiple endpoint implementations should be possible, even though only `JsonEndpoint` is implemented.
 - Operations (like `RollingAverageOperation`) should not need to match the type of the observation
 - Operations should be very generic (hence why generic math is being used).
-- The dashboard and the observations should be tightly coupled so that dashboard -> observation interfaction is easy (a little like the "code behind" model).
+- The dashboard and the observations should be tightly coupled so that dashboard -> observation
+ interfaction is easy (a little like the "code behind" model).
 - The main program should be small, primarily setup, a while loop and visualization.
+
+Initially, I tried to include the operations as an additional `IOperation` property on `IObservation`.
+That was possible, but required a lot more type tests and complex/confusing mechanics. Using the dashboard as the
+proper home for the observations and the operations vastly simplified all of that, leaving the `Update` method
+to control the final operations and to be non-generic.
 */
 
 HttpClient client = new();
