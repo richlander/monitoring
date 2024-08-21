@@ -1,201 +1,211 @@
 ﻿
-using System.Dynamic;
+using System.Net.Sockets;
 using System.Numerics;
 using System.Text.Json.Nodes;
+using Monitoring;
+using Monitoring.Operations;
+// using Monitoring.Operations;
 
 HttpClient client = new();
-Monitor monitor = new(client);
-Endpoint<double> wattsOut = new("Yeti Watts Out", "http://192.168.2.184/state", j => j.AsObject()["wattsOut"]?.GetValue<double>() ?? throw new());
-Observation<double> obsWatts = new("Watts out, short duration", TimeSpan.FromSeconds(5), wattsOut, new MinOperation<double>(), new MaxOperation<double>());
-Observation<double> obsWattsLong = new("Watts out, longer duration (rolling average)", TimeSpan.FromSeconds(60), wattsOut, new RollingAverageOperation<double>());
-Endpoint<double> ampsOut = new("Yeti Amps Out", "http://192.168.2.184/state", j => j.AsObject()["ampsOut"]?.GetValue<double>() ?? throw new());
-Observation<double> obsAmps = new("Amps out, short duration (min/max)", TimeSpan.FromSeconds(10), ampsOut, new MinOperation<double>(), new MaxOperation<double>());
-Endpoint<int> temperature = new("Yeti Temperature", "http://192.168.2.184/state", j => j.AsObject()["temperature"]?.GetValue<int>() ?? throw new());
-Observation<int> obsTemp = new("Temperatue, long duration", TimeSpan.FromSeconds(60), temperature, new MinOperation<int>(), new MaxOperation<int>());
+// TheObserver observer = new(client);
+string yetiUrl = "http://192.168.2.184/state";
 
-// Good info @ https://github.com/dotnet/runtime/pull/100316
-
-List<IObservation> observations = [obsWatts, obsWattsLong, obsAmps, obsTemp];
-List<Task<IObservation>> work = [];
-work.AddRange(monitor.QueueDelay(observations));
+YetiDashboard dashboard = new("Yeti 1500X");
+RollingAverageOperation<double> yetiTempRollingAverage = new("yeti-temp-rolling");
+JsonObservation<int> yetiTempObservation = new("yeti-temp", "Yeti Temperature", j => j.AsObject()["temperature"]?.GetValue<int>() ?? default, [ yetiTempRollingAverage ]);
+JsonEndpoint yetiEndpoint = new("Yeti", yetiUrl, [yetiTempObservation]);
+List<EndPointMaps> endpoints = GetEndPointMaps([yetiEndpoint]);
 
 while (true)
 {
-    try
+    foreach (var endpoint in endpoints)
     {
-        using var cts = new CancellationTokenSource(5_000);
-        await foreach (var task in Task.WhenEach(work).WithCancellation(cts.Token))
+        // Each endpoint type reqires special handling on invocation
+        if (endpoint.Endpoint is JsonEndpoint jsonEndpoint)
         {
-            work.Remove(task);
-            var observation = await task;
+            // Call endpoint -- acquire new values
+            JsonNode jsonNode = await yetiEndpoint.CallEndpoint(client);
 
-            if (observation is Observation<int> obsInt)
-            {
-                await Print(obsInt);
-            }
-            else if (observation is Observation<double> obsDouble)
-            {
-                await Print(obsDouble);
-            }
-
-            work.AddRange(monitor.QueueDelay(observation));
+            // Load new values, per type
+            JsonObservation<int>.UpdateValue(jsonNode, endpoint.Observations[typeof(IObservation<int>)]);
+            JsonObservation<double>.UpdateValue(jsonNode, endpoint.Observations[typeof(IObservation<double>)]);
         }
+
+        // Update dashboard, per type
+        dashboard.UpdateDashboard(endpoint.Observations[typeof(IObservation<int>)], typeof(int));
+        dashboard.UpdateDashboard(endpoint.Observations[typeof(IObservation<double>)], typeof(double));
     }
-    catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
-    {
-    }
+
+    PrintDashboard(dashboard);
+    await Task.Delay(TimeSpan.FromSeconds(5));
 }
 
-async Task Print<T>(Observation<T> observation) where T: INumber<T>
+void PrintDashboard(YetiDashboard dashboard)
 {
-    var result = await monitor.Observe(observation);
-
-    foreach (var op in result.Operations)
-    {
-        if (op.Changed)
-        {
-            Console.WriteLine($"{observation.Endpoint.Name}; {op.Name}; {op.Value};");
-        }
-    }
+    Console.WriteLine($"Temp: {dashboard.Temperature}; Temp Rolling Average: {dashboard.TemperatureRollingAverage}");
 }
 
-// void Log<T>(Observation<T> observation) where T: INumber<T>
+// foreach (var observation in yetiEndpoint.Observations)
 // {
-//     string filename = observation.Name.Replace(' ', '-');
-//     File.OpenWrite()
+//     if (observation.Id == "yeti-temp" && observation is IObservation<int> tempObservation)
+//     {
+//         dashboard.Temperature = tempObservation.Value;
+//         double value = tempObservation.Value;
+//         IOperation<double>? operation = RunOperation<double>(value, operations, RollingAverageOperation<double>.OperationId);
+//         if (operation != null)
+//         {
+//             dashboard.TemperatureRollingAverage = operation.Value;
+//         }
+//     }
+// }
+
+Dictionary<Type, List<IObservation>> GetObservationMap(List<IObservation> observations)
+{
+    Dictionary<Type, List<IObservation>> map = new()
+    {
+        { typeof(IObservation<int>), [] },
+        { typeof(IObservation<double>), [] }
+    };
+
+    foreach (var observation in observations)
+    {
+        if (observation is IObservation<int>)
+        {
+            map[typeof(IObservation<int>)].Add(observation);
+        }
+        else if (observation is IObservation<double>)
+        {
+            map[typeof(IObservation<double>)].Add(observation);
+        }
+    }
+
+    return map;
+}
+
+Dictionary<Type, List<IOperation>>? GetOperationsMap(List<IOperation>? operations)
+{
+    if (operations is null)
+    {
+        return null;
+    }
+
+    Dictionary<Type, List<IOperation>> map = new()
+    {
+        { typeof(IOperation<int>), [] },
+        { typeof(IOperation<double>), [] }
+    };
+
+    foreach (var operation in operations)
+    {
+        if (operation is IOperation<int>)
+        {
+            map[typeof(IOperation<int>)].Add(operation);
+        }
+        else if (operation is IOperation<double>)
+        {
+            map[typeof(IOperation<double>)].Add(operation);
+        }
+    }
+
+    return map;
+}
+
+List<EndPointMaps> GetEndPointMaps(List<IEndpoint> endpoints)
+{
+    List<EndPointMaps> maps = [];
+
+    foreach (var endpoint in endpoints)
+    {
+        var obsMap = GetObservationMap(endpoint.Observations);
+        var opsMap = GetOperationsMap(endpoint.Operations);
+        maps.Add(new(endpoint, obsMap, opsMap));
+    }
+
+    return maps;
+}
+
+// void UpdateDashboard(YetiDashboard dashboard, Dictionary<Type, List<IObservation>> observarions)
+// {
+//     foreach (var observation in endpoint.Observations)
+//     {
+//         if (observation.Id == "yeti-temp" && observation is IObservation<int> tempObservation)
+//         {
+//             dashboard.Temperature = tempObservation.Value;
+//             double value = tempObservation.Value;
+//             IOperation<double>? operation = RunOperation<double>(value, operations, RollingAverageOperation<double>.OperationId);
+//             if (operation != null)
+//             {
+//                 dashboard.TemperatureRollingAverage = operation.Value;
+//             }
+//         }
+//     }
+// }
+
+// IOperation<T>? RunOperation<T>(T value, List<IOperation> operations, string name) where T : INumber<T>
+// {
+//     foreach (var operation in operations)
+//     {
+//         if (operation.Id == name && operation is IOperation<T> op)
+//         {
+//             op.Load(value);
+//             return op;
+//         }
+//     }
+
+//     return null;
 // }
 
 
-public record Observation<T>(string Name, TimeSpan Frequency, Endpoint<T> Endpoint, params List<IOperation<T>> Operations) : IObservation where T : INumber<T>
-{
-    public DateTime LastObservation { get; set; }
 
-    public ObservationResult<T> GetResults()
-    {
-        List<OperationResult<T>> results = [];
 
-        foreach (var operation in Operations)
-        {
-            results.Add(operation.GetResult());
-        }
+// JsonEndpoint<double> wattsOut = new("Yeti Watts Out", yetiUrl, j => j.AsObject()["wattsOut"]?.GetValue<double>() ?? throw new());
+// ObservationOperation<double> obsWatts = new("Watts out, short duration", TimeSpan.FromSeconds(5), wattsOut, new MinOperation<double>(), new MaxOperation<double>());
+// ObservationOperation<double> obsWattsLong = new("Watts out, longer duration (rolling average)", TimeSpan.FromSeconds(60), wattsOut, new RollingAverageOperation<double>());
+// JsonEndpoint<double> ampsOut = new("Yeti Amps Out", yetiUrl, j => j.AsObject()["ampsOut"]?.GetValue<double>() ?? throw new());
+// ObservationOperation<double> obsAmps = new("Amps out, short duration (min/max)", TimeSpan.FromSeconds(10), ampsOut, new MinOperation<double>(), new MaxOperation<double>());
+// JsonEndpoint<int> temperature = new("Yeti Temperature", yetiUrl, j => j.AsObject()["temperature"]?.GetValue<int>() ?? throw new());
+// ObservationOperation<int> obsTemp = new("Temperatue, long duration", TimeSpan.FromSeconds(60), temperature, new MinOperation<int>(), new MaxOperation<int>());
 
-        ObservationResult<T> result = new(Name, LastObservation, results);
-        return result;
-    }
-}
+// List<IOperationInfo> observations = [obsWatts, obsWattsLong, obsAmps, obsTemp];
+// TimeSpan delay = observations.MinBy(o => o.Frequency)?.Frequency ?? TimeSpan.FromMinutes(1);
 
-public record Endpoint<T>(string Name, string Uri, Func<JsonNode, T?> Func) where T : INumber<T>;
+// while (true)
+// {
+//     foreach (var observation in observations)
+//     {
+//         if (DateTime.UtcNow < observation.LastObservation + observation.Frequency)
+//         {
+//             continue;
+//         }
 
-public record ObservationResult<T>(string Name, DateTime Time, params List<OperationResult<T>> Operations) where T : INumber<T>;
+//         if (observation is ObservationOperation<int> obsInt)
+//         {
+//             await Print(obsInt);
+//         }
+//         else if (observation is ObservationOperation<double> obsDouble)
+//         {
+//             await Print(obsDouble);
+//         }
+//     }
 
-public record struct OperationResult<T>(string Name, T Value, bool Changed) where T : INumber<T>;
+//     await Task.Delay(delay);
+// }
 
-public interface IOperation<T> where T : INumber<T>
-{
-    string Name { get; }
-    
-    void Load(T value);
+// async Task Print<T>(ObservationOperation<T> observation) where T: INumber<T>
+// {
+//     var result = await observer.Observe(observation);
 
-    T Value { get; }
+//     foreach (var op in result.Observations)
+//     {
+//         if (op.Changed)
+//         {
+//             Console.WriteLine($"{observation.Endpoint.Name}; {op.Name}; {op.Value};");
+//         }
+//     }
+// }
 
-    bool ValueChanged { get; }
-
-    OperationResult<T> GetResult() => new(Name, Value, ValueChanged);
-}
-
-public interface IObservation
-{
-    TimeSpan Frequency { get; }
-
-    DateTime LastObservation { get; set; }
-}
-
-public class MinOperation<T> : IOperation<T> where T : INumber<T>, IMinMaxValue<T>
-{
-    T _value = T.MaxValue;
-    bool _valueChanged = false;
-
-    public string Name => "Min value";
-
-    public T Value => _value;
-
-    public void Load(T value)
-    {
-        if (value < _value)
-        {
-            _valueChanged = true;
-            _value = value;
-            return;
-        }
-
-        if (_valueChanged is true)
-        {
-            _valueChanged = false;
-        }
-    }
-
-    public bool ValueChanged => _valueChanged;
-}
-
-public class MaxOperation<T> : IOperation<T> where T : INumber<T>, IMinMaxValue<T>
-{
-    T _value = T.MinValue;
-    bool _valueChanged = false;
-
-    public string Name => "Max value";
-
-    public T Value => _value;
-
-    public void Load(T value)
-    {
-        if (value > _value)
-        {
-            _valueChanged = true;
-            _value = value;
-            return;
-        }
-
-        if (_valueChanged is true)
-        {
-            _valueChanged = false;
-        }
-    }
-
-    public bool ValueChanged => _valueChanged;
-}
-
-public class RollingAverageOperation<T> : IOperation<T> where T : INumber<T>
-{
-    T _value = T.Zero;
-    List<T> _values = [];
-
-    bool _valueChanged = false;
-
-    public string Name => "Rolling average";
-
-    public T Value => _value;
-
-    public void Load(T value)
-    {
-        _values.Add(value);
-
-        if (_values.Count > 10)
-        {
-            _values.RemoveAt(0);
-        }
-
-        T sum = T.Zero;
-
-        for (int i = 0; i < _values.Count; i++)
-        {
-            sum += _values[i];
-        }
-
-        T average = sum / T.CreateChecked(_values.Count);
-
-        _valueChanged = average != _value;
-        _value = average;
-    }
-
-    public bool ValueChanged => _valueChanged;
-}
+// // void Log<T>(Observation<T> observation) where T: INumber<T>
+// // {
+// //     string filename = observation.Name.Replace(' ', '-');
+// //     File.OpenWrite()
+// // }
