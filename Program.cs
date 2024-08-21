@@ -19,7 +19,9 @@ Design goals:
 Initially, I tried to include the operations as an additional `IOperation` property on `IObservation`.
 That was possible, but required a lot more type tests and complex/confusing mechanics. Using the dashboard as the
 proper home for the observations and the operations vastly simplified all of that, leaving the `Update` method
-to control the final operations and to be non-generic.
+to control the final operations and to be non-generic. I also wanted to make the operations as `IOservation` which
+resulted on each of the operations exposing a nullable `Operations` property. Hardly a disaster, but odd. In any case,
+that all got scrapped for the current much simpler model.
 */
 
 HttpClient client = new();
