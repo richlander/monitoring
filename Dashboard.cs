@@ -55,6 +55,19 @@ public record Dashboard(string Name, List<IEndpoint> Endpoints, JsonObservation<
         LastUpdated = DateTime.UtcNow;
     }
 
+    public List<IObservation> Observations => [
+        TemperatureObservation,
+        TemperatureMinOperation,
+        TemperatureMaxOperation,
+        TemperatureMeanOperation,
+        TemperatureRollingAverage,
+        WattsOutObservation,
+        WattsOutMinOperation,
+        WattsOutMaxOperation,
+        WattsOutMeanOperation,
+        WattsOutRollingAverage
+    ];
+
     public void ResetForNextRead() => ValueChanged = false; 
 
 }

@@ -4,10 +4,8 @@ using System.Numerics;
 using System.Text.Json.Nodes;
 using Monitoring;
 using Monitoring.Operations;
-// using Monitoring.Operations;
 
 HttpClient client = new();
-// TheObserver observer = new(client);
 string yetiUrl = "http://192.168.2.184/state";
 
 JsonObservation<int> yetiTempObservation = new("Yeti Temperature", j => j.AsObject()["temperature"]?.GetValue<int>() ?? default);
@@ -24,6 +22,8 @@ Dashboard dashboard = new(
     yetiTempObservation,
     yetiWattsObservation
     );
+
+List<IObservation> observations = dashboard.Observations;
 
 Console.WriteLine(dashboard.Name);
 
@@ -48,7 +48,7 @@ while (true)
 
     if (dashboard.ValueChanged)
     {
-        PrintDashboard(dashboard);
+        PrintDashboard(dashboard, observations);
         dashboard.ResetForNextRead();
     }
     else
@@ -59,16 +59,14 @@ while (true)
     await Task.Delay(TimeSpan.FromSeconds(10));
 }
 
-static void PrintDashboard(Dashboard dashboard)
+static void PrintDashboard(Dashboard dashboard, List<IObservation> observations)
 {
-    var d = dashboard;
-    // Temperature
-    PrintObservations(d.TemperatureObservation, d.TemperatureMinOperation, d.TemperatureMaxOperation, d.TemperatureMeanOperation, d.TemperatureRollingAverage);
-    // Watts Out
-    PrintObservations(d.WattsOutObservation, d.WattsOutMinOperation, d.WattsOutMaxOperation, d.WattsOutMeanOperation, d.WattsOutRollingAverage);
+    Console.WriteLine($"{nameof(dashboard.LastUpdated)}: {dashboard.LastUpdated}");
+    PrintObservations(observations);
+    Console.WriteLine();
 }
 
-static void PrintObservations(params Span<IObservation> observations)
+static void PrintObservations(List<IObservation> observations)
 {
     foreach (var observation in observations)
     {
