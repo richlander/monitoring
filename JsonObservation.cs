@@ -3,15 +3,15 @@ using System.Text.Json.Nodes;
 
 namespace Monitoring;
 
-public record JsonObservation<T>(string Id, string Name, Func<JsonNode, T?> Func) : IObservation<T> where T : INumber<T>
+public record JsonObservation<T>(string Name, Func<JsonNode, T?> Func) : IObservation<T> where T : INumber<T>
 {
-    public DateTime Timestamp { get; private set; }
-
     public T? Value { get; private set;}
 
     object? IObservation.Value => Value;
 
     public bool ValueChanged { get; private set; } = false;
+
+    public DateTime Timestamp { get; private set; }
 
     public void Load(T value) => Value = value;
 

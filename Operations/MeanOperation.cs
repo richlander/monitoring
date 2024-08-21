@@ -8,7 +8,11 @@ public class MeanOperation<T>(string name) : IObservation<T> where T : INumber<T
 
     public T Value { get; private set; } = T.MinValue;
 
+    object? IObservation.Value => Value;
+
     public bool ValueChanged { get; private set; } = false;
+
+    public DateTime Timestamp { get; private set; }
 
     public void Load(params Span<T> values)
     {
@@ -18,6 +22,7 @@ public class MeanOperation<T>(string name) : IObservation<T> where T : INumber<T
         if (ValueChanged)
         {
             Value = average;
+            Timestamp = DateTime.UtcNow;
         }
     }
 
@@ -25,8 +30,4 @@ public class MeanOperation<T>(string name) : IObservation<T> where T : INumber<T
     {
         throw new NotImplementedException();
     }
-
-    object? IObservation.Value => throw new NotImplementedException();
-
-    public DateTime Timestamp => throw new NotImplementedException();
 }

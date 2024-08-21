@@ -6,6 +6,8 @@ public interface IObservation
 
     object? Value { get; }
 
+    bool ValueChanged { get; }
+
     DateTime Timestamp { get; }
 }
 
@@ -14,6 +16,4 @@ public interface IObservation<T> : IObservation
     void Load(T Value);
 
     new T? Value { get; }
-
-    bool ValueChanged { get; }
 }

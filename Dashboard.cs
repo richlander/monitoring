@@ -29,7 +29,7 @@ public record Dashboard(string Name, List<IEndpoint> Endpoints, JsonObservation<
 
     public RollingAverageOperation<double> WattsOutRollingAverage { get; init; } = new("Yeti Watts Out Rolling Average", _rollingAverageCount);
 
-    public bool ValueChanged { get; private set; }
+    public bool ValueChanged { get; private set; } = true;
 
     public DateTime LastUpdated { get ; private set; }
 
