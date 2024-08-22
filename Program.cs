@@ -65,16 +65,7 @@ while (true)
         dashboard.Update();
     }
 
-    if (dashboard.ValueChanged)
-    {
-        PrintDashboard(dashboard, observations);
-        dashboard.ResetForNextRead();
-    }
-    else
-    {
-        Console.WriteLine($"No change. Time: {DateTime.UtcNow}; Last update: {dashboard.LastUpdated}");
-    }
-
+    PrintDashboard(dashboard, observations);
     await Task.Delay(TimeSpan.FromSeconds(10));
 }
 
@@ -87,8 +78,12 @@ static void PrintDashboard(Dashboard dashboard, List<IObservation> observations)
 
 static void PrintObservations(List<IObservation> observations)
 {
+    bool clockStrike = DateTime.UtcNow.Second < 10;
     foreach (var observation in observations)
     {
-        Console.WriteLine($"{observation.Name}: {observation.Value}"); 
+        if (observation.ValueChanged | clockStrike)
+        {
+            Console.WriteLine($"{observation.Name}: {observation.Value}"); 
+        }
     }
 }

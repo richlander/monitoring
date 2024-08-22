@@ -29,14 +29,11 @@ public record Dashboard(string Name, List<IEndpoint> Endpoints, JsonObservation<
 
     public RollingAverageOperation<double> WattsOutRollingAverage { get; init; } = new("Yeti Watts Out Rolling Average", _rollingAverageCount);
 
-    public bool ValueChanged { get; private set; } = true;
-
     public DateTime LastUpdated { get ; private set; }
 
     public void Update()
     {
         // Yeti Temperature
-        ValueChanged |= Temperature == TemperatureObservation.Value;
         Temperature = TemperatureObservation.Value;
         TemperatureMinOperation.Load(Temperature);
         TemperatureMaxOperation.Load(Temperature);
@@ -44,7 +41,6 @@ public record Dashboard(string Name, List<IEndpoint> Endpoints, JsonObservation<
         TemperatureRollingAverage.Load(Temperature);
 
         // Yeti Watts out
-        ValueChanged |= WattsOut == WattsOutObservation.Value;
         WattsOut = WattsOutObservation.Value;
         WattsOutMinOperation.Load(WattsOut);
         WattsOutMaxOperation.Load(WattsOut);
@@ -67,7 +63,4 @@ public record Dashboard(string Name, List<IEndpoint> Endpoints, JsonObservation<
         WattsOutMeanOperation,
         WattsOutRollingAverage
     ];
-
-    public void ResetForNextRead() => ValueChanged = false; 
-
 }
