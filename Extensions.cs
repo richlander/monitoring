@@ -1,4 +1,6 @@
 using System.Numerics;
+using System.Numerics.Tensors;
+using System.Runtime.InteropServices;
 
 namespace Monitoring;
 
@@ -6,33 +8,14 @@ public static class Extensions
 {
     public static T Average<T>(this List<T> values) where T : INumber<T>
     {
-        T sum = T.Zero;
-        T count = T.Zero;
-
-        foreach (var value in values)
-        {
-            sum += value;
-            count++;
-        }
-
-        T average = sum / count;
-
-        return average;
+        Span<T> span = CollectionsMarshal.AsSpan(values);
+        return span.Average();
     }
 
     public static T Average<T>(this Span<T> values) where T : INumber<T>
     {
-        T sum = T.Zero;
-        T count = T.Zero;
-
-        foreach (T value in values)
-        {
-            sum += value;
-            count++;
-        }
-
-        T average = sum / count;
-
+        T sum = TensorPrimitives.Sum<T>(values);
+        T average = sum / T.CreateTruncating(values.Length);
         return average;
     }
 }

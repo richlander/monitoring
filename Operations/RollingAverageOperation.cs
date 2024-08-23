@@ -1,4 +1,3 @@
-using System.Net.NetworkInformation;
 using System.Numerics;
 
 namespace Monitoring.Operations;
